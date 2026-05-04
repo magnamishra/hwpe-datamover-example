@@ -21,7 +21,8 @@ module datamover_top_wrap
 `endif
   parameter N_CORES = 2,
   parameter MP  = 4,
-  parameter ID  = 10
+  parameter ID  = 10,
+  parameter int unsigned PIXEL_DIFF_THRESHOLD = 100
 )
 (
   // global signals
@@ -49,7 +50,10 @@ module datamover_top_wrap
   input  logic       [ID-1:0]                   periph_id,
   output logic         [31:0]                   periph_r_data,
   output logic                                  periph_r_valid,
-  output logic       [ID-1:0]                   periph_r_id
+  output logic       [ID-1:0]                   periph_r_id,
+  // threshold trigger for wakelet 
+  output logic                                  pixel_wakeup_o
+
 );
 
   localparam BW = 32*MP;
@@ -115,17 +119,19 @@ module datamover_top_wrap
   end
 
   datamover_top #(
-    .ID               ( ID       ),
-    .BW               ( 32*MP    ),
-    .N_CORES          ( N_CORES  ),
-    .`HCI_SIZE_PARAM(tcdm) ( `HCI_SIZE_PARAM(tcdm) )
+    .ID                     ( ID       ),
+    .BW                     ( 32*MP    ),
+    .N_CORES                ( N_CORES  ),
+    .PIXEL_DIFF_THRESHOLD   ( PIXEL_DIFF_THRESHOLD ),
+    .`HCI_SIZE_PARAM(tcdm)  ( `HCI_SIZE_PARAM(tcdm) )
   ) i_datamover_top (
-    .clk_i       ( clk_i       ),
-    .rst_ni      ( rst_ni      ),
-    .test_mode_i ( test_mode_i ),
-    .evt_o       ( evt_o       ),
-    .tcdm        ( tcdm.initiator        ),
-    .periph      ( periph      )
+    .clk_i          ( clk_i       ),
+    .rst_ni         ( rst_ni      ),
+    .test_mode_i    ( test_mode_i ),
+    .evt_o          ( evt_o       ),
+    .tcdm           ( tcdm.initiator        ),
+    .pixel_wakeup_o ( pixel_wakeup_o        ),
+    .periph         ( periph      )
   );
 
 

@@ -25,7 +25,8 @@ module datamover_top #(
   parameter int unsigned N_CORES   = 8,
   parameter int unsigned N_CONTEXT = 2,
   parameter int unsigned MISALIGNED_ACCESSES = 0,
-  parameter hci_size_parameter_t `HCI_SIZE_PARAM(tcdm) = '0
+  parameter hci_size_parameter_t `HCI_SIZE_PARAM(tcdm) = '0 ,
+  parameter int unsigned PIXEL_DIFF_THRESHOLD = 100
 ) (
   // global signals
   input  logic                    clk_i,
@@ -33,6 +34,8 @@ module datamover_top #(
   input  logic                    test_mode_i,
   // events
   output logic [N_CORES-1:0][1:0] evt_o,
+  // threshold trigger for wakelet 
+  output pixel_wakeup_o,
   // tcdm master ports
   hci_core_intf.initiator         tcdm,
   // periph slave port
@@ -100,16 +103,18 @@ module datamover_top #(
   // The "engine", i.e., the datapath of the HWPE, is as simple as it gets:
   // a FIFO copying the data in stream into the data out one!
   datamover_engine #(
-    .FIFO_DEPTH ( 4          ),
-    .BW_ALIGNED ( BW_ALIGNED )
+    .FIFO_DEPTH           ( 4          ),
+    .BW_ALIGNED           ( BW_ALIGNED ),
+    .PIXEL_DIFF_THRESHOLD ( PIXEL_DIFF_THRESHOLD )
   ) i_engine (
-    .clk_i      ( clk_i          ),
-    .rst_ni     ( rst_ni         ),
-    .test_mode_i( test_mode_i    ),
-    .enable_i   ( 1'b1           ),
-    .clear_i    ( clear          ),
-    .data_in    ( data_in        ),
-    .data_out   ( data_out       )
+    .clk_i          ( clk_i          ),
+    .rst_ni         ( rst_ni         ),
+    .test_mode_i    ( test_mode_i    ),
+    .enable_i       ( 1'b1           ),
+    .clear_i        ( clear          ),
+    .pixel_wakeup_o ( pixel_wakeup_o ),
+    .data_in        ( data_in        ),
+    .data_out       ( data_out       )
   );
   
   // The slave module exposes a peripheral interconnect HWPE-Periph plug;
