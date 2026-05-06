@@ -25,8 +25,7 @@ module datamover_top #(
   parameter int unsigned N_CORES   = 8,
   parameter int unsigned N_CONTEXT = 2,
   parameter int unsigned MISALIGNED_ACCESSES = 0,
-  parameter hci_size_parameter_t `HCI_SIZE_PARAM(tcdm) = '0 ,
-  parameter int unsigned PIXEL_DIFF_THRESHOLD = 100
+  parameter hci_size_parameter_t `HCI_SIZE_PARAM(tcdm) = '0 
 ) (
   // global signals
   input  logic                    clk_i,
@@ -34,8 +33,6 @@ module datamover_top #(
   input  logic                    test_mode_i,
   // events
   output logic [N_CORES-1:0][1:0] evt_o,
-  // threshold trigger for wakelet 
-  output pixel_wakeup_o,
   // tcdm master ports
   hci_core_intf.initiator         tcdm,
   // periph slave port
@@ -52,6 +49,9 @@ module datamover_top #(
 
   // Software-generated clear signal.
   logic clear;
+
+  // threshold trigger for wakelet 
+  logic pixel_wakeup_o; 
 
   // These are the bit fields used to control the streamer.
   ctrl_streamer_t  streamer_ctrl, streamer_ctrl_cfg;
@@ -104,14 +104,14 @@ module datamover_top #(
   // a FIFO copying the data in stream into the data out one!
   datamover_engine #(
     .FIFO_DEPTH           ( 4          ),
-    .BW_ALIGNED           ( BW_ALIGNED ),
-    .PIXEL_DIFF_THRESHOLD ( PIXEL_DIFF_THRESHOLD )
+    .BW_ALIGNED           ( BW_ALIGNED )
   ) i_engine (
     .clk_i          ( clk_i          ),
     .rst_ni         ( rst_ni         ),
     .test_mode_i    ( test_mode_i    ),
     .enable_i       ( 1'b1           ),
     .clear_i        ( clear          ),
+    pixel_diff_threshold_i ( reg_file.generic_params[0] ), 
     .pixel_wakeup_o ( pixel_wakeup_o ),
     .data_in        ( data_in        ),
     .data_out       ( data_out       )
@@ -149,7 +149,7 @@ module datamover_top #(
 
   // Datamover FSM: combinational next-state calculation process.
   always_comb
-  begin : fsm_ns_comb
+  begin : fsm_next_state_comb
     state_d = state_q;
     if(state_q == DM_IDLE) begin
       if(slave_flags.start)
@@ -172,6 +172,7 @@ module datamover_top #(
   begin : fsm_out_comb
     slave_ctrl = '0;
     streamer_ctrl = streamer_ctrl_cfg;
+    slave_ctrl.evt = pixel_wakeup_o; 
     if(state_q == DM_STARTING) begin
       streamer_ctrl.data_in_source_ctrl.req_start = 1'b1;
       streamer_ctrl.data_out_sink_ctrl.req_start = 1'b1;
