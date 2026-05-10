@@ -111,7 +111,7 @@ module datamover_top #(
     .test_mode_i    ( test_mode_i    ),
     .enable_i       ( 1'b1           ),
     .clear_i        ( clear          ),
-    pixel_diff_threshold_i ( reg_file.generic_params[0] ), 
+    .pixel_diff_threshold_i ( reg_file.generic_params[0] ), 
     .pixel_wakeup_o ( pixel_wakeup_o ),
     .data_in        ( data_in        ),
     .data_out       ( data_out       )
