@@ -16,6 +16,12 @@
              Magna Mishra < Add dummy processing capabilities for Wakelet >
  */
 
+/*
+  - Changes 
+  - Update state machine to update frame buffer only in FILL state 
+  - Mske pixel_wakeup_o level triggered
+*/
+
 import hwpe_stream_package::*;
 import hci_package::*;
 
@@ -30,68 +36,51 @@ module datamover_engine #(
   // local enable & clear
   input  logic                   enable_i,
   input  logic                   clear_i,
-  input logic [31:0] pixel_diff_threshold_i,
+  input logic [31:0]             pixel_diff_threshold_i,
+  // output
+  output logic                   pixel_wakeup_o, 
   // input data stream + handshake
-  output logic pixel_wakeup_o, 
   hwpe_stream_intf_stream.sink   data_in,
   // output data stream + handshake
   hwpe_stream_intf_stream.source data_out
 );
-
-  // Defined for frame size - 64*64*1 byte per frame
-  // Process 2 frames together 
 
   localparam int unsigned PIXELS_PER_WORD = BW_ALIGNED / 8;
   localparam int unsigned WORDS_PER_FRAME = 4096 / PIXELS_PER_WORD;
   localparam int unsigned WORD_CNT_WIDTH  = $clog2(WORDS_PER_FRAME);
   localparam int unsigned DIFF_CNT_WIDTH  = $clog2(WORDS_PER_FRAME * PIXELS_PER_WORD + 1);
 
-  // Create frame buffer to hold (i+1) frame while i and i-1 are being compared 
-  // Size: 128*256
+  // Frame buffer holds previous frame for comparison
   logic [BW_ALIGNED-1:0] frame_buf [0:WORDS_PER_FRAME-1];
 
-  // Internal signals 
-  // Track word of a frame 
-  logic [WORD_CNT_WIDTH-1:0]   word_cnt_d, word_cnt_q;
-  // Sum of differeing pixels 
-  logic [DIFF_CNT_WIDTH-1:0]   diff_cnt_d, diff_cnt_q;
-  // End of word 
-  logic                        last_word;
-  // Handshake
-  logic                        word_valid;
-  // Difference within a word 
-  logic [DIFF_CNT_WIDTH-1:0]   word_diff_count;
+  // Internal signals
+  logic [WORD_CNT_WIDTH-1:0] word_cnt_d, word_cnt_q;
+  logic [DIFF_CNT_WIDTH-1:0] diff_cnt_d, diff_cnt_q;
+  logic                       last_word;
+  logic                       word_valid;
+  logic [DIFF_CNT_WIDTH-1:0] word_diff_count;
 
-  // Handshake 
-  // Last word signals EOF
   assign word_valid = data_in.valid & data_in.ready;
   assign last_word  = (word_cnt_q == WORD_CNT_WIDTH'(WORDS_PER_FRAME - 1));
 
-  // FSM to compare pixels  
-
   typedef enum logic [1:0] {
-  // Store the frame 
-  FILL    = 2'd0, 
-  // Compare the frame
-  COMPARE = 2'd1
+    FILL    = 2'd0,
+    COMPARE = 2'd1
   } state_t;
 
   state_t state_d, state_q;
 
-  // Combinational Block
-  // Check difference across 32 bit pixels against buffered word and incoming word
-  // Store differences 
-  // Compute always but update in COMARE STATE
+  // Pixel difference computation
   always_comb begin : pixel_compare
     word_diff_count = '0;
     for (int i = 0; i < PIXELS_PER_WORD; i++) begin
       if (data_in.data[i*8 +: 8] != frame_buf[word_cnt_q][i*8 +: 8]) begin
         word_diff_count = word_diff_count + 1;
-      end 
+      end
     end
   end
-  
-  // Sequential block 
+
+  // Sequential block
   always_ff @(posedge clk_i or negedge rst_ni) begin : fsm_seq
     if (!rst_ni) begin
       state_q    <= FILL;
@@ -104,11 +93,12 @@ module datamover_engine #(
     end
   end
 
-  // Next State 
-  always_comb begin : next_syate
+  // Next state logic
+  always_comb begin : next_state
     state_d    = state_q;
     word_cnt_d = word_cnt_q;
     diff_cnt_d = diff_cnt_q;
+
     case (state_q)
       FILL: begin
         if (word_valid) begin
@@ -127,45 +117,54 @@ module datamover_engine #(
           if (last_word) begin
             word_cnt_d = '0;
             diff_cnt_d = '0;
+            // Stay in COMPARE -> continuous ping-pong
           end
         end
       end
-    default: state_d = FILL;
+
+      default: state_d = FILL;
     endcase
   end
 
-  //Always copy frame into buffer 
-
+  // Frame buffer update:
+  // During FILL: store incoming frame as reference
+  // During COMPARE: update frame_buf AFTER comparison
+  //                 so next frame compares against current frame
   always_ff @(posedge clk_i) begin : frame_buf_write
     if (word_valid) begin
+      // Always update frame_buf -> in FILL it builds the reference,
+      // in COMPARE it updates reference to current frame for next comparison
       frame_buf[word_cnt_q] <= data_in.data;
     end
   end
 
+  // Wakeup generation -> fires for one cycle at end of COMPARE frame
+  // when diff exceeds threshold
   always_ff @(posedge clk_i or negedge rst_ni) begin : wakeup_gen
     if (!rst_ni) begin
-      pixel_wakeup_o <= 1'b0;
+        pixel_wakeup_o <= 1'b0;
+    end else if (clear_i) begin
+        pixel_wakeup_o <= 1'b0;
     end else begin
-      pixel_wakeup_o <= 1'b0;
         if (state_q == COMPARE && word_valid && last_word) begin
-          if ((diff_cnt_q + word_diff_count) > pixel_diff_threshold_i) begin
-            pixel_wakeup_o <= 1'b1;
-          end
+            if ((diff_cnt_q + word_diff_count) > pixel_diff_threshold_i) begin
+                pixel_wakeup_o <= 1'b1;
+            end
         end
     end
-  end 
+  end
 
-  // Unchanged 
+  // Output FIFO unchanged
   hwpe_stream_fifo #(
     .DATA_WIDTH ( BW_ALIGNED ),
     .FIFO_DEPTH ( FIFO_DEPTH )
   ) i_fifo (
-    .clk_i   ( clk_i    ),
-    .rst_ni  ( rst_ni   ),
-    .clear_i ( clear_i  ),
-    .flags_o (          ),
-    .push_i  ( data_in  ),
-    .pop_o   ( data_out )
+    .clk_i   ( clk_i   ),
+    .rst_ni  ( rst_ni  ),
+    .clear_i ( clear_i ),
+    .flags_o (         ),
+    .push_i  ( data_in ),
+    .pop_o   ( data_out)
   );
 
-endmodule // datamover_streamer
+endmodule
