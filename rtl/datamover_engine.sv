@@ -38,7 +38,7 @@ module datamover_engine #(
   input  logic                   clear_i,
   input logic [31:0]             pixel_diff_threshold_i,
   // output
-  output logic                   pixel_wakeup_o, 
+  output logic                   pixel_wakeup_o,
   // input data stream + handshake
   hwpe_stream_intf_stream.sink   data_in,
   // output data stream + handshake
@@ -70,7 +70,8 @@ module datamover_engine #(
 
   state_t state_d, state_q;
 
-  // Pixel difference computation
+  // Pixel difference computation ? uses frame_buf combinationally (old value)
+  // frame_buf write happens on clock edge so old value is always used here
   always_comb begin : pixel_compare
     word_diff_count = '0;
     for (int i = 0; i < PIXELS_PER_WORD; i++) begin
@@ -117,7 +118,6 @@ module datamover_engine #(
           if (last_word) begin
             word_cnt_d = '0;
             diff_cnt_d = '0;
-            // Stay in COMPARE -> continuous ping-pong
           end
         end
       end
@@ -128,33 +128,31 @@ module datamover_engine #(
 
   // Frame buffer update:
   // During FILL: store incoming frame as reference
-  // During COMPARE: update frame_buf AFTER comparison
-  //                 so next frame compares against current frame
+  // During COMPARE: update frame_buf with current frame AFTER comparison
+  //   - pixel_compare block reads frame_buf combinationally (old value)
+  //   - this write stores new value for next comparison
   always_ff @(posedge clk_i) begin : frame_buf_write
     if (word_valid) begin
-      // Always update frame_buf -> in FILL it builds the reference,
-      // in COMPARE it updates reference to current frame for next comparison
       frame_buf[word_cnt_q] <= data_in.data;
     end
   end
 
-  // Wakeup generation -> fires for one cycle at end of COMPARE frame
-  // when diff exceeds threshold
+  // Wakeup generation ? level triggered, held until clear
   always_ff @(posedge clk_i or negedge rst_ni) begin : wakeup_gen
     if (!rst_ni) begin
-        pixel_wakeup_o <= 1'b0;
+      pixel_wakeup_o <= 1'b0;
     end else if (clear_i) begin
-        pixel_wakeup_o <= 1'b0;
+      pixel_wakeup_o <= 1'b0;
     end else begin
-        if (state_q == COMPARE && word_valid && last_word) begin
-            if ((diff_cnt_q + word_diff_count) > pixel_diff_threshold_i) begin
-                pixel_wakeup_o <= 1'b1;
-            end
+      if (state_q == COMPARE && word_valid && last_word) begin
+        if ((diff_cnt_q + word_diff_count) > pixel_diff_threshold_i) begin
+          pixel_wakeup_o <= 1'b1;
         end
+      end
     end
   end
 
-  // Output FIFO unchanged
+  // Output FIFO
   hwpe_stream_fifo #(
     .DATA_WIDTH ( BW_ALIGNED ),
     .FIFO_DEPTH ( FIFO_DEPTH )
