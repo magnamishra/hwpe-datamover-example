@@ -70,7 +70,7 @@ module datamover_engine #(
 
   state_t state_d, state_q;
 
-  // Pixel difference computation ? uses frame_buf combinationally (old value)
+  // Pixel difference computation uses frame_buf combinationally (old value)
   // frame_buf write happens on clock edge so old value is always used here
   always_comb begin : pixel_compare
     word_diff_count = '0;
@@ -137,7 +137,7 @@ module datamover_engine #(
     end
   end
 
-  // Wakeup generation ? level triggered, held until clear
+  // Wakeup generation level triggered, held until clear
   always_ff @(posedge clk_i or negedge rst_ni) begin : wakeup_gen
     if (!rst_ni) begin
       pixel_wakeup_o <= 1'b0;

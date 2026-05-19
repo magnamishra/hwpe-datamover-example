@@ -135,14 +135,14 @@ module datamover_top #(
     .reg_file( reg_file   )
   );
 
-  // first_job flag ? set on reset, cleared after first job completes
+  // first_job flag set on reset, cleared after first job completes
   always_ff @(posedge clk_i or negedge rst_ni) begin : first_job_proc
     if (!rst_ni) first_job <= 1'b1;
     else if (clear) first_job <= 1'b1;
     else if (state_q == DM_FINISHED) first_job <= 1'b0;
   end
 
-  // Wait counter ? counts cycles in DM_FINISHED
+  // Wait counter counts cycles in DM_FINISHED
   always_ff @(posedge clk_i or negedge rst_ni) begin : wait_cnt_proc
     if (!rst_ni) wait_cnt <= '0;
     else if (clear) wait_cnt <= '0;
@@ -173,7 +173,7 @@ module datamover_top #(
           streamer_flags.tcdm_fifo_empty)
         state_d = DM_FINISHED;
     end
-    else begin // DM_FINISHED ? wait then restart
+    else begin // DM_FINISHED wait then restart
       if (wait_cnt >= 32'd334000)
         state_d = DM_STARTING;
     end
